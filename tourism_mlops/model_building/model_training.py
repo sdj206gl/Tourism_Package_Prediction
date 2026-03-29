@@ -31,18 +31,21 @@ warnings.filterwarnings('ignore')
 
 # Load preprocessed data from HuggingFace Hub
 def load_data_from_hf():
-    """Load train and test datasets from HuggingFace Hub"""
     print("Loading datasets from HuggingFace Hub...")
     
-    # Load datasets
-    X_train = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/X_train.csv")
-    X_test = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/X_test.csv")
-    y_train = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/y_train.csv").squeeze()
-    y_test = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/y_test.csv").squeeze()
-    
-    print(f"Training set: {X_train.shape}, Target: {y_train.shape}")
-    print(f"Test set: {X_test.shape}, Target: {y_test.shape}")
-    
+    try:
+        X_train = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/X_train.csv")
+        X_test = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/X_test.csv")
+        y_train = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/y_train.csv").squeeze()
+        y_test = pd.read_csv("hf://datasets/shashidj/tourism-package-prediction/y_test.csv").squeeze()
+        print("✅ Loaded from HuggingFace")
+    except Exception as e:
+        print("⚠️ HF load failed, loading local files")
+        X_train = pd.read_csv("X_train.csv")
+        X_test = pd.read_csv("X_test.csv")
+        y_train = pd.read_csv("y_train.csv").squeeze()
+        y_test = pd.read_csv("y_test.csv").squeeze()
+
     return X_train, X_test, y_train, y_test
 
 # Model configurations with hyperparameters
@@ -275,8 +278,9 @@ The model uses customer demographics, interaction history, and behavioral featur
     
     try:
         # Create repository
+        repo_id = "shashidj/tourism-package-prediction-model"
         api.create_repo(
-            repo_id="your_username/tourism-package-prediction-model",
+            repo_id=repo_id,
             repo_type="model",
             exist_ok=True
         )
@@ -284,7 +288,7 @@ The model uses customer demographics, interaction history, and behavioral featur
         # Upload model files
         api.upload_folder(
             folder_path=model_dir,
-            repo_id="your_username/tourism-package-prediction-model",
+            repo_id=repo_id,
             repo_type="model"
         )
         

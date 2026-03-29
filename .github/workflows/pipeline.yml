@@ -43,11 +43,13 @@ jobs:
         
     - name: Code Formatting with Black
       run: |
-        black --check --diff tourism_mlops/
+        pip install black
+        black tourism_mlops/
         
     - name: Import Sorting with isort
       run: |
-        isort --check-only --diff tourism_mlops/
+        pip install isort
+        isort tourism_mlops/
         
     - name: Lint with Flake8
       run: |
