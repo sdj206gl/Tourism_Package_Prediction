@@ -50,7 +50,7 @@ def deploy_to_huggingface_space():
             return False
     
     # Verify deployment files exist
-    deployment_dir = Path("tourism_mlops/deployment")
+    deployment_dir = Path(__file__).resolve().parent
     required_files = ["Dockerfile", "app.py", "requirements.txt"]
     
     print("\n🔍 Verifying deployment files...")
