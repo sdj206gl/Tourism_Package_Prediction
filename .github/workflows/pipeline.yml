@@ -78,7 +78,7 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pandas numpy scikit-learn joblib xgboost
+        pip install pandas numpy scikit-learn joblib xgboost huggingface-hub datasets
         
     - name: Create Data Directory
       run: |
