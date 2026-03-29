@@ -368,17 +368,29 @@ jobs:
         
     - name: Commit Performance Report
       run: |
-        # Add performance report to repository
-        mv performance_report.md reports/latest_performance_report.md || mkdir -p reports && mv performance_report.md reports/latest_performance_report.md
-        
-        # Check if there are any changes to commit
+        # Ensure reports directory exists
+        mkdir -p reports
+
+        # Check if file exists before moving
+        if [ -f "performance_report.md" ]; then
+          mv performance_report.md reports/latest_performance_report.md
+          echo "✅ Report moved"
+        else
+          echo "⚠️ performance_report.md not found, skipping move"
+        fi
+
+        # Commit only if file exists
+        if [ -f "reports/latest_performance_report.md" ]; then
         if [[ -n $(git status --porcelain) ]]; then
           git add reports/latest_performance_report.md
           git commit -m "🤖 Auto-update: Performance report $(date +'%Y-%m-%d %H:%M:%S')"
-          git push origin main
-          echo "✅ Performance report committed to main branch"
+        git push origin main
+        echo "✅ Performance report committed"
         else
           echo "ℹ️ No changes to commit"
+        fi
+        else
+          echo "⚠️ No report to commit"
         fi
 
   # =====================================
