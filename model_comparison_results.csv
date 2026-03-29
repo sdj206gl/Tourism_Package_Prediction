@@ -1,0 +1,7 @@
+Model,Best_Params,CV_Score,Test_Accuracy,Test_F1,Test_ROC_AUC
+XGBoost,"{'learning_rate': 0.2, 'max_depth': 7, 'n_estimators': 200, 'subsample': 1.0}",0.9194388667308486,0.9430992736077481,0.9406723633263525,0.9545981726118073
+GradientBoosting,"{'learning_rate': 0.2, 'max_depth': 7, 'n_estimators': 200}",0.9318599000595975,0.9418886198547215,0.9389428900085622,0.9791707919625092
+Bagging,"{'max_features': 0.8, 'max_samples': 1.0, 'n_estimators': 50}",0.9130816485581994,0.9188861985472155,0.9120106422014969,0.9700904264848708
+RandomForest,"{'max_depth': None, 'min_samples_leaf': 1, 'min_samples_split': 2, 'n_estimators': 300}",0.9082359143629946,0.9079903147699758,0.9003700470876753,0.9644187340292119
+DecisionTree,"{'max_depth': None, 'min_samples_leaf': 1, 'min_samples_split': 2}",0.8837078806216476,0.8958837772397095,0.8963738961046157,0.8373360489566536
+AdaBoost,"{'learning_rate': 1.0, 'n_estimators': 200}",0.852209233026177,0.8498789346246973,0.8206818443824214,0.85832083958021

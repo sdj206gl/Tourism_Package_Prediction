@@ -24,7 +24,7 @@ import mlflow.xgboost
 from mlflow.models.signature import infer_signature
 
 # HuggingFace Integration
-from huggingface_hub import HfApi, Repository
+from huggingface_hub import HfApi
 import os
 import warnings
 warnings.filterwarnings('ignore')
