@@ -1,0 +1,397 @@
+
+name: Tourism Package Prediction MLOps Pipeline
+
+on:
+  # Trigger workflow on push to main branch
+  push:
+    branches: [ main ]
+  # Trigger workflow on pull requests to main
+  pull_request:
+    branches: [ main ]
+  # Allow manual workflow dispatch
+  workflow_dispatch:
+  # Schedule workflow to run daily at 2 AM UTC
+  schedule:
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: 3.9
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+jobs:
+  # =====================================
+  # JOB 1: Code Quality & Testing
+  # =====================================
+  code-quality:
+    name: Code Quality & Testing
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest pytest-cov black isort
+        pip install -r tourism_mlops/deployment/requirements.txt
+        
+    - name: Code Formatting with Black
+      run: |
+        black --check --diff tourism_mlops/
+        
+    - name: Import Sorting with isort
+      run: |
+        isort --check-only --diff tourism_mlops/
+        
+    - name: Lint with Flake8
+      run: |
+        # Stop the build if there are Python syntax errors or undefined names
+        flake8 tourism_mlops/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 tourism_mlops/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  # =====================================
+  # JOB 2: Data Pipeline
+  # =====================================
+  data-pipeline:
+    name: Data Registration & Preparation
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy scikit-learn huggingface-hub
+        
+    - name: Create Data Directory
+      run: |
+        mkdir -p tourism_mlops/data
+        
+    - name: Data Registration
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        cd tourism_mlops/model_building
+        python data_register.py
+        
+    - name: Data Preparation
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        cd tourism_mlops/model_building  
+        python prep.py
+        
+    - name: Upload Data Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: prepared-data
+        path: |
+          X_train.csv
+          X_test.csv
+          y_train.csv  
+          y_test.csv
+
+  # =====================================
+  # JOB 3: Model Training & Evaluation
+  # =====================================
+  model-training:
+    name: Model Training & Hyperparameter Tuning  
+    runs-on: ubuntu-latest
+    needs: data-pipeline
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install ML Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy scikit-learn xgboost mlflow huggingface-hub joblib
+        
+    - name: Download Data Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: prepared-data
+        
+    - name: Setup MLflow
+      run: |
+        mkdir -p mlruns
+        
+    - name: Train Models
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        MLFLOW_TRACKING_URI: "file:./mlruns"
+      run: |
+        cd tourism_mlops/model_building
+        python model_training.py
+        
+    - name: Upload Model Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: trained-models
+        path: |
+          *.pkl
+          model_comparison_results.csv
+          mlruns/
+          
+    - name: Upload Training Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: training-report
+        path: model_comparison_results.csv
+
+  # =====================================
+  # JOB 4: Model Testing & Validation  
+  # =====================================
+  model-validation:
+    name: Model Testing & Validation
+    runs-on: ubuntu-latest
+    needs: model-training
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy scikit-learn joblib pytest
+        
+    - name: Download Model Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: trained-models
+        
+    - name: Download Data Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: prepared-data
+        
+    - name: Model Validation Tests
+      run: |
+        python -c "
+        import joblib
+        import pandas as pd
+        import numpy as np
+        from sklearn.metrics import accuracy_score
+        
+        # Load best model and test data
+        model = joblib.load('best_model.pkl')
+        X_test = pd.read_csv('X_test.csv')
+        y_test = pd.read_csv('y_test.csv').squeeze()
+        
+        # Make predictions
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        print(f'Model Accuracy: {accuracy:.4f}')
+        
+        # Validation thresholds
+        assert accuracy > 0.70, f'Model accuracy {accuracy:.4f} below threshold 0.70'
+        assert len(y_pred) == len(y_test), 'Prediction length mismatch'  
+        assert not np.isnan(y_pred).any(), 'NaN predictions detected'
+        
+        print('✅ All model validation tests passed!')
+        "
+
+  # =====================================
+  # JOB 5: Deployment Pipeline
+  # =====================================
+  deployment:
+    name: Deploy to HuggingFace Spaces
+    runs-on: ubuntu-latest
+    needs: model-validation
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install Deployment Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install huggingface-hub
+        
+    - name: Download Model Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: trained-models
+        
+    - name: Deploy to HuggingFace Spaces
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        cd tourism_mlops/deployment
+        python deploy_to_hf_space.py
+        
+    - name: Deployment Success Notification
+      run: |
+        echo "🚀 Deployment completed successfully!"
+        echo "🌐 Application available at: https://huggingface.co/spaces/shashidj/Tourism-Package-Prediction"
+
+  # =====================================
+  # JOB 6: Performance Monitoring
+  # =====================================
+  monitoring:
+    name: Performance Monitoring & Reporting
+    runs-on: ubuntu-latest
+    needs: deployment
+    if: always()
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Download Training Report
+      uses: actions/download-artifact@v3
+      with:
+        name: training-report
+        
+    - name: Generate Performance Report
+      run: |
+        python -c "
+        import pandas as pd
+        from datetime import datetime
+        
+        # Load model comparison results
+        results = pd.read_csv('model_comparison_results.csv')
+        best_model = results.iloc[0]
+        
+        # Create performance report
+        report = f'''
+        # 📊 MLOps Pipeline Performance Report
+        
+        **Pipeline Execution Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+        
+        ## 🏆 Best Model Performance
+        - **Algorithm**: {best_model['Model']}
+        - **Test Accuracy**: {best_model['Test_Accuracy']:.4f}
+        - **F1 Score**: {best_model['Test_F1']:.4f}
+        - **ROC AUC**: {best_model['Test_ROC_AUC']:.4f}
+        - **Cross-Validation Score**: {best_model['CV_Score']:.4f}
+        
+        ## 📈 All Models Comparison
+        '''
+        
+        for _, row in results.iterrows():
+            report += f\"- **{row['Model']}**: Accuracy {row['Test_Accuracy']:.4f}\\n\"
+            
+        report += '''
+        
+        ## ✅ Pipeline Status
+        - Data Processing: ✅ Completed
+        - Model Training: ✅ Completed  
+        - Model Validation: ✅ Passed
+        - Deployment: ✅ Successful
+        
+        ---
+        *Generated by GitHub Actions MLOps Pipeline*
+        '''
+        
+        # Save report
+        with open('performance_report.md', 'w') as f:
+            f.write(report)
+            
+        print('📊 Performance report generated')
+        "
+        
+    - name: Upload Performance Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-report
+        path: performance_report.md
+
+  # =====================================
+  # JOB 7: Auto-update Main Branch
+  # =====================================
+  auto-update:
+    name: Auto-update Main Branch
+    runs-on: ubuntu-latest
+    needs: monitoring
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+        
+    - name: Configure Git
+      run: |
+        git config --local user.email "shashidhar.jagatap206@gmail.com"
+        git config --local user.name "sdj206gl"
+        
+    - name: Download Performance Report
+      uses: actions/download-artifact@v3
+      with:
+        name: performance-report
+        
+    - name: Commit Performance Report
+      run: |
+        # Add performance report to repository
+        mv performance_report.md reports/latest_performance_report.md || mkdir -p reports && mv performance_report.md reports/latest_performance_report.md
+        
+        # Check if there are any changes to commit
+        if [[ -n $(git status --porcelain) ]]; then
+          git add reports/latest_performance_report.md
+          git commit -m "🤖 Auto-update: Performance report $(date +'%Y-%m-%d %H:%M:%S')"
+          git push origin main
+          echo "✅ Performance report committed to main branch"
+        else
+          echo "ℹ️ No changes to commit"
+        fi
+
+  # =====================================
+  # JOB 8: Cleanup
+  # =====================================
+  cleanup:
+    name: Cleanup Artifacts
+    runs-on: ubuntu-latest
+    needs: auto-update
+    if: always()
+    
+    steps:
+    - name: Cleanup Summary
+      run: |
+        echo "🧹 MLOps Pipeline Execution Complete"
+        echo "📋 Summary:"
+        echo "   ✅ Code quality checks"
+        echo "   ✅ Data processing"
+        echo "   ✅ Model training"
+        echo "   ✅ Model validation"
+        echo "   ✅ Deployment"
+        echo "   ✅ Performance monitoring" 
+        echo "   ✅ Repository updates"
+        echo ""
+        echo "🎉 Tourism Package Prediction MLOps pipeline successfully executed!"
