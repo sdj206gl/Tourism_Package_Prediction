@@ -4,7 +4,7 @@ streamlit==1.28.1
 
 # Core ML and Data Processing Libraries
 pandas==2.0.3
-numpy==1.24.3
+numpy==1.23.5
 scikit-learn==1.3.0
 joblib==1.3.2
 
